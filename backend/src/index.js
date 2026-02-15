@@ -182,48 +182,7 @@ async function executeScraperRun(options = {}) {
   }
 }
 
-// Manual trigger endpoint (uses all sources by default)
-fastify.post('/api/scrape', async (request, reply) => {
-  const { sources = ['all'], keywords = '', location = '' } = request.body || {};
-  const result = await executeScraperRun({ sources, keywords, location });
-  return { message: 'Scraping completed', ...result };
-});
-
-// Get available scraper sources
-fastify.get('/api/scrape/sources', async (request, reply) => {
-  const sources = getAvailableSources();
-  const info = sources.map(name => ({
-    name,
-    ...getScraperInfo(name)
-  }));
-  return { sources: info };
-});
-
-// Scrape from specific sources with parameters
-fastify.post('/api/scrape/custom', async (request, reply) => {
-  const { sources, keywords, location } = request.body;
-  
-  if (!sources || !Array.isArray(sources) || sources.length === 0) {
-    reply.code(400);
-    return { error: 'Sources array is required' };
-  }
-  
-  console.log(`[API] Custom scrape requested:`, { sources, keywords, location });
-  
-  try {
-    const result = await executeScraperRun({ sources, keywords, location });
-    return {
-      message: 'Custom scraping completed',
-      sources,
-      keywords,
-      location,
-      ...result
-    };
-  } catch (error) {
-    reply.code(500);
-    return { error: error.message };
-  }
-});
+// Note: Scraping endpoints are now defined in ./api/routes.js
 
 // Debug/test endpoint
 fastify.get('/api/test/scrape', async (request, reply) => {

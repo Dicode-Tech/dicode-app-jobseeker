@@ -93,9 +93,8 @@ async function runScrapers(options = {}) {
           jobs = jobs.concat(page2);
         }
       } else if (sourceName === 'weworkremotely') {
-        // We Work Remotely: HTML scraping
-        const category = keywords ? '' : 'programming';
-        jobs = await scraper.searchJobs(keywords, 'remote', category);
+        // WeWorkRemotely: RSS-based, filter by keywords
+        jobs = await scraper.searchJobs(keywords);
       } else {
         // Generic fallback
         jobs = await scraper.searchJobs(keywords, location);

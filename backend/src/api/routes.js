@@ -1,5 +1,6 @@
 const { getDb } = require('../db/database');
 const { calculateMatchScore } = require('../matcher/scorer');
+const { runScrapers, getAvailableSources, getScraperInfo } = require('../scrapers/orchestrator');
 
 async function routes(fastify, options) {
   
@@ -252,6 +253,102 @@ async function routes(fastify, options) {
       };
     } catch (error) {
       db.close();
+      reply.code(500);
+      return { error: error.message };
+    }
+  });
+  
+  // ============== SCRAPING ENDPOINTS ==============
+  
+  // Get available scraper sources
+  fastify.get('/api/scrape/sources', async (request, reply) => {
+    try {
+      const sources = getAvailableSources();
+      const sourcesWithInfo = sources.map(name => ({
+        name,
+        ...getScraperInfo(name)
+      }));
+      return { sources: sourcesWithInfo };
+    } catch (error) {
+      reply.code(500);
+      return { error: error.message };
+    }
+  });
+  
+  // Scrape jobs from all sources
+  fastify.post('/api/scrape', async (request, reply) => {
+    const { keywords = '', location = '', limit = 100 } = request.body || {};
+    
+    try {
+      console.log(`[API /scrape] Starting scrape with keywords: "${keywords}", location: "${location}"`);
+      
+      const startTime = Date.now();
+      const jobs = await runScrapers({
+        sources: ['all'],
+        keywords,
+        location,
+        limit
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      // Group jobs by source
+      const bySource = {};
+      jobs.forEach(job => {
+        bySource[job.source] = (bySource[job.source] || 0) + 1;
+      });
+      
+      return {
+        success: true,
+        jobs_found: jobs.length,
+        duration_ms: duration,
+        by_source: bySource,
+        jobs: jobs
+      };
+    } catch (error) {
+      console.error('[API /scrape] Error:', error.message);
+      reply.code(500);
+      return { error: error.message };
+    }
+  });
+  
+  // Scrape jobs from specific sources
+  fastify.post('/api/scrape/custom', async (request, reply) => {
+    const { sources, keywords = '', location = '', limit = 100 } = request.body || {};
+    
+    if (!sources || !Array.isArray(sources) || sources.length === 0) {
+      reply.code(400);
+      return { error: 'Missing required field: sources (array of source names)' };
+    }
+    
+    try {
+      console.log(`[API /scrape/custom] Starting scrape with sources: ${sources.join(', ')}`);
+      
+      const startTime = Date.now();
+      const jobs = await runScrapers({
+        sources,
+        keywords,
+        location,
+        limit
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      // Group jobs by source
+      const bySource = {};
+      jobs.forEach(job => {
+        bySource[job.source] = (bySource[job.source] || 0) + 1;
+      });
+      
+      return {
+        success: true,
+        jobs_found: jobs.length,
+        duration_ms: duration,
+        by_source: bySource,
+        jobs: jobs
+      };
+    } catch (error) {
+      console.error('[API /scrape/custom] Error:', error.message);
       reply.code(500);
       return { error: error.message };
     }
