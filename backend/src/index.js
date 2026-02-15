@@ -7,7 +7,7 @@ const cron = require('node-cron');
 
 const { initDb } = require('./db/database');
 const routes = require('./api/routes');
-const { runScrapers, getAvailableSources, getScraperInfo } = require('./scrapers/orchestrator');
+const { runScrapers: runScrapersOrch, getAvailableSources, getScraperInfo } = require('./scrapers/orchestrator');
 const { calculateMatchScore } = require('./matcher/scorer');
 
 // Initialize database
@@ -28,10 +28,10 @@ if (process.env.NODE_ENV === 'production') {
 // Scheduled job scraping (runs daily at 8 AM)
 cron.schedule('0 8 * * *', async () => {
   console.log('Running scheduled job scraping...');
-  await runScrapers();
+  await executeScraperRun();
 });
 
-async function runScrapers(options = {}) {
+async function executeScraperRun(options = {}) {
   const { getDb } = require('./db/database');
   const db = getDb();
   
@@ -185,7 +185,7 @@ async function runScrapers(options = {}) {
 // Manual trigger endpoint (uses all sources by default)
 fastify.post('/api/scrape', async (request, reply) => {
   const { sources = ['all'], keywords = '', location = '' } = request.body || {};
-  const result = await runScrapers({ sources, keywords, location });
+  const result = await executeScraperRun({ sources, keywords, location });
   return { message: 'Scraping completed', ...result };
 });
 
@@ -211,7 +211,7 @@ fastify.post('/api/scrape/custom', async (request, reply) => {
   console.log(`[API] Custom scrape requested:`, { sources, keywords, location });
   
   try {
-    const result = await runScrapers({ sources, keywords, location });
+    const result = await executeScraperRun({ sources, keywords, location });
     return {
       message: 'Custom scraping completed',
       sources,
