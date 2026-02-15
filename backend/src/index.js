@@ -126,38 +126,37 @@ async function runScrapers() {
               stmt.finalize();
             });
           });
+          
+          // Get job ID for match scoring
+          const jobId = await new Promise((resolve, reject) => {
+            db.get('SELECT id FROM jobs WHERE external_id = ?', [job.external_id], (err, row) => {
+              if (err) reject(err);
+              else resolve(row?.id);
+            });
+          });
+          
+          if (jobId) {
+            // Insert or update match score
+            await new Promise((resolve, reject) => {
+              db.run(`
+                INSERT INTO job_matches (job_id, match_score, match_reasons)
+                VALUES (?, ?, ?)
+                ON CONFLICT(job_id) DO UPDATE SET
+                  match_score = excluded.match_score,
+                  match_reasons = excluded.match_reasons,
+                  updated_at = CURRENT_TIMESTAMP
+              `, [jobId, score, JSON.stringify(reasons)], (err) => {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
+          }
         } catch (insertError) {
           console.error(`[Scraper] Failed to insert job ${job.external_id}:`, insertError.message);
         }
       }
       
       console.log(`[Scraper] Processed ${processedCount} jobs, added: ${added}, updated: ${updated}`);
-        
-        // Get job ID for match scoring
-        const jobId = await new Promise((resolve, reject) => {
-          db.get('SELECT id FROM jobs WHERE external_id = ?', [job.external_id], (err, row) => {
-            if (err) reject(err);
-            else resolve(row?.id);
-          });
-        });
-        
-        if (jobId) {
-          // Insert or update match score
-          await new Promise((resolve, reject) => {
-            db.run(`
-              INSERT INTO job_matches (job_id, match_score, match_reasons)
-              VALUES (?, ?, ?)
-              ON CONFLICT(job_id) DO UPDATE SET
-                match_score = excluded.match_score,
-                match_reasons = excluded.match_reasons,
-                updated_at = CURRENT_TIMESTAMP
-            `, [jobId, score, JSON.stringify(reasons)], (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-        }
-      }
       
       // Log scraper run
       db.run(`
