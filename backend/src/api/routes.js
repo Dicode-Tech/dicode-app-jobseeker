@@ -4,7 +4,7 @@ const { calculateMatchScore } = require('../matcher/scorer');
 async function routes(fastify, options) {
   
   // Get all jobs with optional filtering
-  fastify.get('/jobs', async (request, reply) => {
+  fastify.get('/api/jobs', async (request, reply) => {
     const db = getDb();
     const { 
       minScore = 0, 
@@ -65,7 +65,7 @@ async function routes(fastify, options) {
   });
   
   // Get single job
-  fastify.get('/jobs/:id', async (request, reply) => {
+  fastify.get('/api/jobs/:id', async (request, reply) => {
     const db = getDb();
     const { id } = request.params;
     
@@ -98,7 +98,7 @@ async function routes(fastify, options) {
   });
   
   // Update job status
-  fastify.patch('/jobs/:id', async (request, reply) => {
+  fastify.patch('/api/jobs/:id', async (request, reply) => {
     const db = getDb();
     const { id } = request.params;
     const { status, favorited, notes } = request.body;
@@ -128,13 +128,13 @@ async function routes(fastify, options) {
   });
   
   // Get user profile
-  fastify.get('/profile', async (request, reply) => {
+  fastify.get('/api/profile', async (request, reply) => {
     const userProfile = require('../config/userProfile');
     return userProfile;
   });
   
   // Get stats
-  fastify.get('/stats', async (request, reply) => {
+  fastify.get('/api/stats', async (request, reply) => {
     const db = getDb();
     
     try {
@@ -164,7 +164,7 @@ async function routes(fastify, options) {
   });
   
   // Trigger scraping (manual)
-  fastify.post('/scrape', async (request, reply) => {
+  fastify.post('/api/scrape', async (request, reply) => {
     const { source } = request.body;
     
     // This will be implemented later
