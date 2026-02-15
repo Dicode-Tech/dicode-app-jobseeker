@@ -71,6 +71,7 @@ function initDb() {
         applied BOOLEAN DEFAULT 0,
         notes TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (job_id) REFERENCES jobs(id),
         UNIQUE(job_id)
       )
