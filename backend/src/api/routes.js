@@ -163,13 +163,6 @@ async function routes(fastify, options) {
     }
   });
   
-  // Trigger scraping (manual)
-  fastify.post('/api/scrape', async (request, reply) => {
-    const { source } = request.body;
-    
-    // This will be implemented later
-    return { message: 'Scraping started', source };
-  });
 }
 
 module.exports = routes;
