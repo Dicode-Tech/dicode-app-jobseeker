@@ -42,23 +42,28 @@ class AdzunaScraper {
   }
 
   normalizeJobs(results) {
-    return results.map(job => ({
-      external_id: `adzuna_${job.id}`,
-      source: 'adzuna',
-      title: job.title,
-      company: job.company?.display_name || 'Unknown',
-      location: job.location?.display_name || '',
-      description: job.description,
-      url: job.redirect_url,
-      salary_min: job.salary_min,
-      salary_max: job.salary_max,
-      salary_currency: job.salary_currency,
-      job_type: job.contract_time,
-      remote: job.title.toLowerCase().includes('remote') || 
-              job.description.toLowerCase().includes('remote'),
-      tags: job.category?.tag || '',
-      posted_at: new Date(job.created_at)
-    }));
+    return results.map(job => {
+      // Adzuna usa 'created', no 'created_at'
+      const postedDate = job.created || job.created_at || job.date || new Date().toISOString();
+      
+      return {
+        external_id: `adzuna_${job.id}`,
+        source: 'adzuna',
+        title: job.title,
+        company: job.company?.display_name || 'Unknown',
+        location: job.location?.display_name || '',
+        description: job.description,
+        url: job.redirect_url,
+        salary_min: job.salary_min,
+        salary_max: job.salary_max,
+        salary_currency: job.salary_currency,
+        job_type: job.contract_type || job.contract_time,
+        remote: job.title?.toLowerCase().includes('remote') || 
+                job.description?.toLowerCase().includes('remote'),
+        tags: job.category?.tag || job.category?.label || '',
+        posted_at: new Date(postedDate)
+      };
+    });
   }
 }
 

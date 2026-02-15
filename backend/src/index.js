@@ -44,70 +44,94 @@ async function runScrapers() {
   
   for (const scraper of scrapers) {
     try {
-      console.log(`Running scraper: ${scraper.constructor.name}`);
+      console.log(`[Scraper] Running: ${scraper.constructor.name}`);
       const logStart = Date.now();
       
       let allJobs = [];
       for (const keyword of searchKeywords.slice(0, 2)) {
         for (const location of locations.slice(0, 2)) {
+          console.log(`[Scraper] Searching: "${keyword}" in "${location}"`);
           const jobs = await scraper.searchJobs(keyword, location);
+          console.log(`[Scraper] Found ${jobs.length} jobs for this query`);
           allJobs = allJobs.concat(jobs);
         }
       }
+      
+      console.log(`[Scraper] Total jobs before dedup: ${allJobs.length}`);
       
       // Remove duplicates by external_id
       const uniqueJobs = allJobs.filter((job, index, self) => 
         index === self.findIndex(j => j.external_id === job.external_id)
       );
       
+      console.log(`[Scraper] Unique jobs after dedup: ${uniqueJobs.length}`);
+      
       let added = 0;
       let updated = 0;
       
+      let processedCount = 0;
       for (const job of uniqueJobs) {
+        processedCount++;
+        
         // Calculate match score
         const { score, reasons } = calculateMatchScore(job);
         
+        // Validate job data
+        if (!job.external_id || !job.title || !job.url) {
+          console.log(`[Scraper] Skipping invalid job #${processedCount}: missing required fields`);
+          continue;
+        }
+        
         // Insert or update job
-        await new Promise((resolve, reject) => {
-          const stmt = db.prepare(`
-            INSERT INTO jobs (
-              external_id, source, title, company, location, description,
-              url, salary_min, salary_max, salary_currency, job_type, remote,
-              tags, posted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(external_id) DO UPDATE SET
-              updated_at = CURRENT_TIMESTAMP,
-              salary_min = COALESCE(excluded.salary_min, salary_min),
-              salary_max = COALESCE(excluded.salary_max, salary_max)
-          `);
-          
-          stmt.run([
-            job.external_id,
-            job.source,
-            job.title,
-            job.company,
-            job.location,
-            job.description,
-            job.url,
-            job.salary_min,
-            job.salary_max,
-            job.salary_currency,
-            job.job_type,
-            job.remote ? 1 : 0,
-            job.tags,
-            job.posted_at
-          ], function(err) {
-            if (err) reject(err);
-            else {
-              if (this.changes > 0) {
-                if (this.lastID) added++;
-                else updated++;
+        try {
+          await new Promise((resolve, reject) => {
+            const stmt = db.prepare(`
+              INSERT INTO jobs (
+                external_id, source, title, company, location, description,
+                url, salary_min, salary_max, salary_currency, job_type, remote,
+                tags, posted_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(external_id) DO UPDATE SET
+                updated_at = CURRENT_TIMESTAMP,
+                salary_min = COALESCE(excluded.salary_min, salary_min),
+                salary_max = COALESCE(excluded.salary_max, salary_max)
+            `);
+            
+            stmt.run([
+              job.external_id,
+              job.source,
+              job.title,
+              job.company,
+              job.location,
+              job.description,
+              job.url,
+              job.salary_min,
+              job.salary_max,
+              job.salary_currency,
+              job.job_type,
+              job.remote ? 1 : 0,
+              job.tags,
+              job.posted_at
+            ], function(err) {
+              if (err) {
+                console.error(`[Scraper] DB error for job ${job.external_id}:`, err.message);
+                reject(err);
+              } else {
+                if (this.changes > 0) {
+                  if (this.lastID) added++;
+                  else updated++;
+                }
+                resolve();
               }
-              resolve();
-            }
-            stmt.finalize();
+              stmt.finalize();
+            });
           });
-        });
+        } catch (insertError) {
+          console.error(`[Scraper] Failed to insert job ${job.external_id}:`, insertError.message);
+        }
+      }
+      
+      console.log(`[Scraper] Processed ${processedCount} jobs, added: ${added}, updated: ${updated}`);
         
         // Get job ID for match scoring
         const jobId = await new Promise((resolve, reject) => {
