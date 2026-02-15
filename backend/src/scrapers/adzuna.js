@@ -10,6 +10,9 @@ class AdzunaScraper {
   }
 
   async searchJobs(keywords, location = '', page = 1) {
+    console.log(`[Adzuna] Searching: "${keywords}" in "${location}"`);
+    console.log(`[Adzuna] Credentials: ID=${ADZUNA_API_ID ? 'SET' : 'MISSING'}, KEY=${ADZUNA_API_KEY ? 'SET' : 'MISSING'}`);
+    
     if (!ADZUNA_API_ID || !ADZUNA_API_KEY) {
       console.warn('Adzuna API credentials not configured');
       return [];
@@ -27,10 +30,13 @@ class AdzunaScraper {
         results_per_page: 50
       };
 
+      console.log(`[Adzuna] Calling URL: ${url}`);
       const response = await axios.get(url, { params });
+      console.log(`[Adzuna] Found ${response.data.results?.length || 0} jobs`);
       return this.normalizeJobs(response.data.results);
     } catch (error) {
-      console.error('Adzuna API error:', error.message);
+      console.error('[Adzuna] API error:', error.message);
+      console.error('[Adzuna] Error details:', error.response?.data || 'No response data');
       return [];
     }
   }

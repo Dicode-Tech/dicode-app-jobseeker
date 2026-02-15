@@ -162,6 +162,26 @@ fastify.post('/api/scrape', async (request, reply) => {
   return { message: 'Scraping completed' };
 });
 
+// Debug/test endpoint
+fastify.get('/api/test/scrape', async (request, reply) => {
+  const AdzunaScraper = require('./scrapers/adzuna');
+  const scraper = new AdzunaScraper();
+  
+  console.log('[TEST] Testing Adzuna scraper...');
+  console.log('[TEST] ADZUNA_APP_ID:', process.env.ADZUNA_APP_ID ? 'SET' : 'NOT SET');
+  
+  const jobs = await scraper.searchJobs('software engineer', 'madrid');
+  
+  return {
+    env_check: {
+      app_id_set: !!process.env.ADZUNA_APP_ID,
+      api_key_set: !!process.env.ADZUNA_API_KEY
+    },
+    jobs_found: jobs.length,
+    sample_jobs: jobs.slice(0, 3).map(j => ({ title: j.title, company: j.company }))
+  };
+});
+
 // Start server
 const start = async () => {
   try {
