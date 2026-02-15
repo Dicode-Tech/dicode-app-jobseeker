@@ -39,8 +39,8 @@ async function runScrapers() {
     new AdzunaScraper()
   ];
   
-  const searchKeywords = ['head of engineering', 'cto', 'vp engineering', 'director engineering'];
-  const locations = ['remote', 'Spain', 'Valencia', 'Madrid', 'Barcelona'];
+  const searchKeywords = ['ingeniero software', 'software engineer', 'desarrollador', 'programador', 'lead developer', 'tech lead'];
+  const locations = ['madrid', 'barcelona', 'valencia', 'españa', 'remote'];
   
   for (const scraper of scrapers) {
     try {
@@ -48,12 +48,14 @@ async function runScrapers() {
       const logStart = Date.now();
       
       let allJobs = [];
-      for (const keyword of searchKeywords.slice(0, 2)) {
-        for (const location of locations.slice(0, 2)) {
+      for (const keyword of searchKeywords) {
+        for (const location of locations) {
           console.log(`[Scraper] Searching: "${keyword}" in "${location}"`);
           const jobs = await scraper.searchJobs(keyword, location);
           console.log(`[Scraper] Found ${jobs.length} jobs for this query`);
           allJobs = allJobs.concat(jobs);
+          // Small delay to be nice to the API
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
       
