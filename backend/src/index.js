@@ -139,19 +139,30 @@ async function runScrapers() {
           
           if (jobId) {
             // Insert or update match score
-            await new Promise((resolve, reject) => {
-              db.run(`
-                INSERT INTO job_matches (job_id, match_score, match_reasons)
-                VALUES (?, ?, ?)
-                ON CONFLICT(job_id) DO UPDATE SET
-                  match_score = excluded.match_score,
-                  match_reasons = excluded.match_reasons,
-                  updated_at = CURRENT_TIMESTAMP
-              `, [jobId, score, JSON.stringify(reasons)], (err) => {
-                if (err) reject(err);
-                else resolve();
+            try {
+              await new Promise((resolve, reject) => {
+                db.run(`
+                  INSERT INTO job_matches (job_id, match_score, match_reasons, status)
+                  VALUES (?, ?, ?, 'new')
+                  ON CONFLICT(job_id) DO UPDATE SET
+                    match_score = excluded.match_score,
+                    match_reasons = excluded.match_reasons,
+                    updated_at = CURRENT_TIMESTAMP
+                `, [jobId, score, JSON.stringify(reasons)], (err) => {
+                  if (err) {
+                    console.error(`[Scraper] Match score error for job ${jobId}:`, err.message);
+                    reject(err);
+                  } else {
+                    console.log(`[Scraper] Saved match score ${score} for job ${jobId}`);
+                    resolve();
+                  }
+                });
               });
-            });
+            } catch (matchErr) {
+              console.error(`[Scraper] Failed to save match score:`, matchErr.message);
+            }
+          } else {
+            console.warn(`[Scraper] No jobId found for ${job.external_id}, skipping match score`);
           }
         } catch (insertError) {
           console.error(`[Scraper] Failed to insert job ${job.external_id}:`, insertError.message);

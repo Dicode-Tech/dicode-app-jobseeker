@@ -4,6 +4,8 @@ import { Star, MapPin, DollarSign, ExternalLink, Filter } from 'lucide-react';
 
 function JobList() {
   const [jobs, setJobs] = useState([]);
+  const [totalJobs, setTotalJobs] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [filters, setFilters] = useState({
     minScore: 0,
     status: 'all',
@@ -11,10 +13,12 @@ function JobList() {
     search: ''
   });
   const [loading, setLoading] = useState(true);
+  const LIMIT = 50;
 
   useEffect(() => {
     fetchJobs();
-  }, [filters]);
+    fetchTotal();
+  }, [filters, offset]);
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -22,7 +26,8 @@ function JobList() {
       const params = new URLSearchParams({
         minScore: filters.minScore,
         status: filters.status,
-        limit: 50
+        limit: LIMIT,
+        offset: offset
       });
       if (filters.favorited) params.set('favorited', 'true');
       if (filters.search) params.set('search', filters.search);
@@ -35,6 +40,24 @@ function JobList() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchTotal = async () => {
+    try {
+      const res = await fetch('/api/jobs/count');
+      const data = await res.json();
+      setTotalJobs(data.total || 0);
+    } catch (err) {
+      console.error('Failed to fetch total:', err);
+    }
+  };
+
+  const loadMore = () => {
+    setOffset(prev => prev + LIMIT);
+  };
+
+  const loadPrevious = () => {
+    setOffset(prev => Math.max(0, prev - LIMIT));
   };
 
   const toggleFavorite = async (id, current) => {
@@ -133,16 +156,23 @@ function JobList() {
                 {job.remote && <span className="remote-badge">🌍 Remote</span>}
               </div>
 
-              <div className="job-score" style={{ color: getScoreColor(job.match_score) }}>
+              <div className="job-score" style={{ color: getScoreColor(job.match_score || 0) }}>
                 <div className="score-circle">
-                  <span className="score-value">{job.match_score || 0}</span>
+                  <span className="score-value">{job.match_score ?? 0}</span>
                   <span className="score-label">match</span>
                 </div>
                 {job.match_reasons && (
                   <div className="match-reasons">
-                    {JSON.parse(job.match_reasons || '[]').slice(0, 2).map((r, i) => (
-                      <span key={i} className="reason-tag">{r}</span>
-                    ))}
+                    {(() => {
+                      try {
+                        const reasons = JSON.parse(job.match_reasons);
+                        return reasons.slice(0, 2).map((r, i) => (
+                          <span key={i} className="reason-tag">{r}</span>
+                        ));
+                      } catch {
+                        return null;
+                      }
+                    })()}
                   </div>
                 )}
               </div>
@@ -168,6 +198,30 @@ function JobList() {
         <div className="empty-state">
           <p>No jobs found matching your criteria.</p>
           <button onClick={fetchJobs} className="btn-primary">Refresh Jobs</button>
+        </div>
+      )}
+
+      {!loading && jobs.length > 0 && (
+        <div className="pagination">
+          <div className="pagination-info">
+            Showing {offset + 1}-{Math.min(offset + jobs.length, totalJobs)} of {totalJobs} jobs
+          </div>
+          <div className="pagination-buttons">
+            <button 
+              onClick={loadPrevious} 
+              disabled={offset === 0}
+              className="btn-secondary"
+            >
+              ← Previous
+            </button>
+            <button 
+              onClick={loadMore} 
+              disabled={offset + LIMIT >= totalJobs}
+              className="btn-secondary"
+            >
+              Next →
+            </button>
+          </div>
         </div>
       )}
     </div>

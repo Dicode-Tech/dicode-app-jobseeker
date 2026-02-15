@@ -141,21 +141,49 @@ async function routes(fastify, options) {
       const stats = await new Promise((resolve, reject) => {
         db.get(`
           SELECT 
-            COUNT(*) as total_jobs,
-            COUNT(CASE WHEN m.match_score >= 70 THEN 1 END) as high_matches,
-            COUNT(CASE WHEN m.favorited = 1 THEN 1 END) as favorited,
-            COUNT(CASE WHEN m.status = 'applied' THEN 1 END) as applied,
-            MAX(j.created_at) as last_update
-          FROM jobs j
-          LEFT JOIN job_matches m ON j.id = m.job_id
+            (SELECT COUNT(*) FROM jobs) as total_jobs,
+            (SELECT COUNT(*) FROM job_matches WHERE match_score >= 70) as high_matches,
+            (SELECT COUNT(*) FROM job_matches WHERE favorited = 1) as favorited,
+            (SELECT COUNT(*) FROM job_matches WHERE status = 'applied') as applied,
+            (SELECT MAX(created_at) FROM jobs) as last_update
         `, (err, row) => {
           if (err) reject(err);
           else resolve(row);
         });
       });
       
+      // Convert nulls to 0
+      const result = {
+        total_jobs: stats.total_jobs || 0,
+        high_matches: stats.high_matches || 0,
+        favorited: stats.favorited || 0,
+        applied: stats.applied || 0,
+        last_update: stats.last_update
+      };
+      
       db.close();
-      return stats;
+      return result;
+    } catch (error) {
+      db.close();
+      reply.code(500);
+      return { error: error.message };
+    }
+  });
+  
+  // Get total count for pagination
+  fastify.get('/api/jobs/count', async (request, reply) => {
+    const db = getDb();
+    
+    try {
+      const count = await new Promise((resolve, reject) => {
+        db.get('SELECT COUNT(*) as total FROM jobs', (err, row) => {
+          if (err) reject(err);
+          else resolve(row?.total || 0);
+        });
+      });
+      
+      db.close();
+      return { total: count };
     } catch (error) {
       db.close();
       reply.code(500);

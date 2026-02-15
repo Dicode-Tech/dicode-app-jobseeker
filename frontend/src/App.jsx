@@ -5,6 +5,7 @@ import JobDetail from './components/JobDetail';
 import Settings from './components/Settings';
 import Stats from './components/Stats';
 import './App.css';
+import './pagination.css';
 
 function App() {
   const [stats, setStats] = useState(null);
