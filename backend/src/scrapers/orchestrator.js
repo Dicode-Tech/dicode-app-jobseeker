@@ -5,13 +5,15 @@
 const AdzunaScraper = require('./adzuna');
 const RemoteOKScraper = require('./remoteok');
 const ArbeitnowScraper = require('./arbeitnow');
+const WeWorkRemotelyScraper = require('./weworkremotely');
 
 // Registry of available scrapers
 const SCRAPER_REGISTRY = {
   adzuna: AdzunaScraper,
   remoteok: RemoteOKScraper,
   arbeitnow: ArbeitnowScraper,
-  all: [AdzunaScraper, RemoteOKScraper, ArbeitnowScraper]
+  weworkremotely: WeWorkRemotelyScraper,
+  all: [AdzunaScraper, RemoteOKScraper, ArbeitnowScraper, WeWorkRemotelyScraper]
 };
 
 /**
@@ -90,6 +92,10 @@ async function runScrapers(options = {}) {
           const page2 = await scraper.searchJobs(keywords, location, 2);
           jobs = jobs.concat(page2);
         }
+      } else if (sourceName === 'weworkremotely') {
+        // We Work Remotely: HTML scraping
+        const category = keywords ? '' : 'programming';
+        jobs = await scraper.searchJobs(keywords, 'remote', category);
       } else {
         // Generic fallback
         jobs = await scraper.searchJobs(keywords, location);
@@ -155,6 +161,13 @@ function getScraperInfo(sourceName) {
       requiresAuth: false,
       locations: ['Europe', 'Germany', 'Remote EU'],
       jobTypes: ['Tech/Software']
+    },
+    weworkremotely: {
+      name: 'We Work Remotely',
+      description: 'Curated remote jobs from top companies',
+      requiresAuth: false,
+      locations: ['Remote/Global'],
+      jobTypes: ['Remote only', 'Programming', 'Design', 'DevOps']
     }
   };
   

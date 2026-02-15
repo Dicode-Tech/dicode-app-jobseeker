@@ -21,7 +21,8 @@
     "node-cron": "^3.0.3",
     "dotenv": "^16.4.1",
     "fuse.js": "^7.0.0",
-    "natural": "^7.0.0"
+    "natural": "^7.0.0",
+    "cheerio": "^1.0.0-rc.12"
   },
   "devDependencies": {
     "nodemon": "^3.0.3",
