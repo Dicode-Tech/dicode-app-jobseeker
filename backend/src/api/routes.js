@@ -191,6 +191,71 @@ async function routes(fastify, options) {
     }
   });
   
+  // Recalculate match scores for all jobs
+  fastify.post('/api/jobs/recalculate-scores', async (request, reply) => {
+    const db = getDb();
+    
+    try {
+      // Get all jobs
+      const jobs = await new Promise((resolve, reject) => {
+        db.all('SELECT * FROM jobs', (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      });
+      
+      console.log(`[Recalculate] Processing ${jobs.length} jobs...`);
+      
+      let updated = 0;
+      let errors = 0;
+      
+      for (const job of jobs) {
+        try {
+          // Calculate match score
+          const { score, reasons } = calculateMatchScore(job);
+          
+          // Insert or update match score
+          await new Promise((resolve, reject) => {
+            db.run(`
+              INSERT INTO job_matches (job_id, match_score, match_reasons, status)
+              VALUES (?, ?, ?, 'new')
+              ON CONFLICT(job_id) DO UPDATE SET
+                match_score = excluded.match_score,
+                match_reasons = excluded.match_reasons,
+                updated_at = CURRENT_TIMESTAMP
+            `, [job.id, score, JSON.stringify(reasons)], (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+          
+          updated++;
+          
+          // Log progress every 50 jobs
+          if (updated % 50 === 0) {
+            console.log(`[Recalculate] Processed ${updated}/${jobs.length} jobs...`);
+          }
+        } catch (err) {
+          console.error(`[Recalculate] Error for job ${job.id}:`, err.message);
+          errors++;
+        }
+      }
+      
+      db.close();
+      
+      return {
+        message: 'Match scores recalculated',
+        total_jobs: jobs.length,
+        updated: updated,
+        errors: errors
+      };
+    } catch (error) {
+      db.close();
+      reply.code(500);
+      return { error: error.message };
+    }
+  });
+  
 }
 
 module.exports = routes;
