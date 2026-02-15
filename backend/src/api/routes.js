@@ -236,7 +236,8 @@ async function routes(fastify, options) {
             console.log(`[Recalculate] Processed ${updated}/${jobs.length} jobs...`);
           }
         } catch (err) {
-          console.error(`[Recalculate] Error for job ${job.id}:`, err.message);
+          console.error(`[Recalculate] Error for job ${job.id} (${job.title}):`, err.message);
+          console.error(`[Recalculate] Stack:`, err.stack);
           errors++;
         }
       }

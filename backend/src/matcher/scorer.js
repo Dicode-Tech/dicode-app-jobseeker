@@ -41,7 +41,8 @@ function calculateMatchScore(job) {
 }
 
 function scoreTitleMatch(jobTitle) {
-  const title = jobTitle.toLowerCase();
+  if (!jobTitle) return { points: 0, reason: null };
+  const title = String(jobTitle).toLowerCase();
   const targetTitles = userProfile.targetTitles.map(t => t.toLowerCase());
   
   // Exact match
@@ -129,7 +130,7 @@ function scoreLocationMatch(job) {
 
 function scoreTechMatch(job) {
   // Same as skills but focused on primary stack
-  const text = `${job.title} ${job.description}`.toLowerCase();
+  const text = `${job.title || ''} ${job.description || ''}`.toLowerCase();
   
   let matches = 0;
   for (const tech of userProfile.skills.primary) {
