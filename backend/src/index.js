@@ -7,7 +7,7 @@ const cron = require('node-cron');
 
 const { initDb } = require('./db/database');
 const routes = require('./api/routes');
-const AdzunaScraper = require('./scrapers/adzuna');
+const { runScrapers, getAvailableSources, getScraperInfo } = require('./scrapers/orchestrator');
 const { calculateMatchScore } = require('./matcher/scorer');
 
 // Initialize database
@@ -31,171 +31,198 @@ cron.schedule('0 8 * * *', async () => {
   await runScrapers();
 });
 
-async function runScrapers() {
+async function runScrapers(options = {}) {
   const { getDb } = require('./db/database');
   const db = getDb();
   
-  const scrapers = [
-    new AdzunaScraper()
-  ];
+  const { sources = ['all'], keywords = '', location = '' } = options;
   
-  const searchKeywords = ['ingeniero software', 'software engineer', 'desarrollador', 'programador', 'lead developer', 'tech lead'];
-  const locations = ['madrid', 'barcelona', 'valencia', 'españa', 'remote'];
-  
-  for (const scraper of scrapers) {
-    try {
-      console.log(`[Scraper] Running: ${scraper.constructor.name}`);
-      const logStart = Date.now();
-      
-      let allJobs = [];
-      for (const keyword of searchKeywords) {
-        for (const location of locations) {
-          console.log(`[Scraper] Searching: "${keyword}" in "${location}"`);
-          const jobs = await scraper.searchJobs(keyword, location);
-          console.log(`[Scraper] Found ${jobs.length} jobs for this query`);
-          allJobs = allJobs.concat(jobs);
-          // Small delay to be nice to the API
-          await new Promise(resolve => setTimeout(resolve, 500));
+  try {
+    console.log(`[Scraper] Starting scrape with sources: ${sources.join(', ')}`);
+    const logStart = Date.now();
+    
+    // Use orchestrator to fetch jobs from multiple sources
+    const uniqueJobs = await runScrapersOrch({
+      sources,
+      keywords,
+      location,
+      limit: 200,
+      onProgress: (source, found, processed, error) => {
+        if (error) {
+          console.error(`[Scraper] ${source} error: ${error}`);
+        } else {
+          console.log(`[Scraper] ${source}: ${found} jobs found`);
         }
       }
+    });
+    
+    console.log(`[Scraper] Total unique jobs to process: ${uniqueJobs.length}`);
+    
+    let added = 0;
+    let updated = 0;
+    let processedCount = 0;
+    
+    for (const job of uniqueJobs) {
+      processedCount++;
       
-      console.log(`[Scraper] Total jobs before dedup: ${allJobs.length}`);
+      // Calculate match score
+      const { score, reasons } = calculateMatchScore(job);
       
-      // Remove duplicates by external_id
-      const uniqueJobs = allJobs.filter((job, index, self) => 
-        index === self.findIndex(j => j.external_id === job.external_id)
-      );
+      // Validate job data
+      if (!job.external_id || !job.title || !job.url) {
+        console.log(`[Scraper] Skipping invalid job #${processedCount}: missing required fields`);
+        continue;
+      }
       
-      console.log(`[Scraper] Unique jobs after dedup: ${uniqueJobs.length}`);
-      
-      let added = 0;
-      let updated = 0;
-      
-      let processedCount = 0;
-      for (const job of uniqueJobs) {
-        processedCount++;
-        
-        // Calculate match score
-        const { score, reasons } = calculateMatchScore(job);
-        
-        // Validate job data
-        if (!job.external_id || !job.title || !job.url) {
-          console.log(`[Scraper] Skipping invalid job #${processedCount}: missing required fields`);
-          continue;
-        }
-        
-        // Insert or update job
-        try {
-          await new Promise((resolve, reject) => {
-            const stmt = db.prepare(`
-              INSERT INTO jobs (
-                external_id, source, title, company, location, description,
-                url, salary_min, salary_max, salary_currency, job_type, remote,
-                tags, posted_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(external_id) DO UPDATE SET
-                updated_at = CURRENT_TIMESTAMP,
-                salary_min = COALESCE(excluded.salary_min, salary_min),
-                salary_max = COALESCE(excluded.salary_max, salary_max)
-            `);
-            
-            stmt.run([
-              job.external_id,
-              job.source,
-              job.title,
-              job.company,
-              job.location,
-              job.description,
-              job.url,
-              job.salary_min,
-              job.salary_max,
-              job.salary_currency,
-              job.job_type,
-              job.remote ? 1 : 0,
-              job.tags,
-              job.posted_at
-            ], function(err) {
-              if (err) {
-                console.error(`[Scraper] DB error for job ${job.external_id}:`, err.message);
-                reject(err);
-              } else {
-                if (this.changes > 0) {
-                  if (this.lastID) added++;
-                  else updated++;
-                }
-                resolve();
+      // Insert or update job
+      try {
+        await new Promise((resolve, reject) => {
+          const stmt = db.prepare(`
+            INSERT INTO jobs (
+              external_id, source, title, company, location, description,
+              url, salary_min, salary_max, salary_currency, job_type, remote,
+              tags, posted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(external_id) DO UPDATE SET
+              updated_at = CURRENT_TIMESTAMP,
+              salary_min = COALESCE(excluded.salary_min, salary_min),
+              salary_max = COALESCE(excluded.salary_max, salary_max)
+          `);
+          
+          stmt.run([
+            job.external_id,
+            job.source,
+            job.title,
+            job.company,
+            job.location,
+            job.description,
+            job.url,
+            job.salary_min,
+            job.salary_max,
+            job.salary_currency,
+            job.job_type,
+            job.remote ? 1 : 0,
+            job.tags,
+            job.posted_at
+          ], function(err) {
+            if (err) {
+              console.error(`[Scraper] DB error for job ${job.external_id}:`, err.message);
+              reject(err);
+            } else {
+              if (this.changes > 0) {
+                if (this.lastID) added++;
+                else updated++;
               }
-              stmt.finalize();
-            });
-          });
-          
-          // Get job ID for match scoring
-          const jobId = await new Promise((resolve, reject) => {
-            db.get('SELECT id FROM jobs WHERE external_id = ?', [job.external_id], (err, row) => {
-              if (err) reject(err);
-              else resolve(row?.id);
-            });
-          });
-          
-          if (jobId) {
-            // Insert or update match score
-            try {
-              await new Promise((resolve, reject) => {
-                db.run(`
-                  INSERT INTO job_matches (job_id, match_score, match_reasons, status)
-                  VALUES (?, ?, ?, 'new')
-                  ON CONFLICT(job_id) DO UPDATE SET
-                    match_score = excluded.match_score,
-                    match_reasons = excluded.match_reasons,
-                    updated_at = CURRENT_TIMESTAMP
-                `, [jobId, score, JSON.stringify(reasons)], (err) => {
-                  if (err) {
-                    console.error(`[Scraper] Match score error for job ${jobId}:`, err.message);
-                    reject(err);
-                  } else {
-                    console.log(`[Scraper] Saved match score ${score} for job ${jobId}`);
-                    resolve();
-                  }
-                });
-              });
-            } catch (matchErr) {
-              console.error(`[Scraper] Failed to save match score:`, matchErr.message);
+              resolve();
             }
-          } else {
-            console.warn(`[Scraper] No jobId found for ${job.external_id}, skipping match score`);
+            stmt.finalize();
+          });
+        });
+        
+        // Get job ID for match scoring
+        const jobId = await new Promise((resolve, reject) => {
+          db.get('SELECT id FROM jobs WHERE external_id = ?', [job.external_id], (err, row) => {
+            if (err) reject(err);
+            else resolve(row?.id);
+          });
+        });
+        
+        if (jobId) {
+          // Insert or update match score
+          try {
+            await new Promise((resolve, reject) => {
+              db.run(`
+                INSERT INTO job_matches (job_id, match_score, match_reasons, status)
+                VALUES (?, ?, ?, 'new')
+                ON CONFLICT(job_id) DO UPDATE SET
+                  match_score = excluded.match_score,
+                  match_reasons = excluded.match_reasons,
+                  updated_at = CURRENT_TIMESTAMP
+              `, [jobId, score, JSON.stringify(reasons)], (err) => {
+                if (err) {
+                  console.error(`[Scraper] Match score error for job ${jobId}:`, err.message);
+                  reject(err);
+                } else {
+                  resolve();
+                }
+              });
+            });
+          } catch (matchErr) {
+            console.error(`[Scraper] Failed to save match score:`, matchErr.message);
           }
-        } catch (insertError) {
-          console.error(`[Scraper] Failed to insert job ${job.external_id}:`, insertError.message);
         }
+      } catch (insertError) {
+        console.error(`[Scraper] Failed to insert job ${job.external_id}:`, insertError.message);
       }
-      
-      console.log(`[Scraper] Processed ${processedCount} jobs, added: ${added}, updated: ${updated}`);
-      
-      // Log scraper run
-      db.run(`
-        INSERT INTO scraper_logs (source, jobs_found, jobs_added, jobs_updated, started_at, finished_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [scraper.constructor.name, uniqueJobs.length, added, updated, logStart, Date.now()]);
-      
-      console.log(`Scraper completed: ${uniqueJobs.length} found, ${added} added, ${updated} updated`);
-      
-    } catch (error) {
-      console.error('Scraper error:', error);
-      
-      db.run(`
-        INSERT INTO scraper_logs (source, jobs_found, jobs_added, jobs_updated, error, finished_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [scraper.constructor.name, 0, 0, 0, error.message, Date.now()]);
     }
+    
+    console.log(`[Scraper] Processed ${processedCount} jobs, added: ${added}, updated: ${updated}`);
+    
+    // Log scraper run (aggregate for all sources)
+    db.run(`
+      INSERT INTO scraper_logs (source, jobs_found, jobs_added, jobs_updated, started_at, finished_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [sources.join(','), uniqueJobs.length, added, updated, logStart, Date.now()]);
+    
+    console.log(`[Scraper] Completed: ${uniqueJobs.length} found, ${added} added, ${updated} updated`);
+    
+    return { found: uniqueJobs.length, added, updated };
+    
+  } catch (error) {
+    console.error('[Scraper] Error:', error);
+    
+    db.run(`
+      INSERT INTO scraper_logs (source, jobs_found, jobs_added, jobs_updated, error, finished_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [sources.join(','), 0, 0, 0, error.message, Date.now()]);
+    
+    throw error;
+  } finally {
+    db.close();
   }
-  
-  db.close();
 }
 
-// Manual trigger endpoint
+// Manual trigger endpoint (uses all sources by default)
 fastify.post('/api/scrape', async (request, reply) => {
-  await runScrapers();
-  return { message: 'Scraping completed' };
+  const { sources = ['all'], keywords = '', location = '' } = request.body || {};
+  const result = await runScrapers({ sources, keywords, location });
+  return { message: 'Scraping completed', ...result };
+});
+
+// Get available scraper sources
+fastify.get('/api/scrape/sources', async (request, reply) => {
+  const sources = getAvailableSources();
+  const info = sources.map(name => ({
+    name,
+    ...getScraperInfo(name)
+  }));
+  return { sources: info };
+});
+
+// Scrape from specific sources with parameters
+fastify.post('/api/scrape/custom', async (request, reply) => {
+  const { sources, keywords, location } = request.body;
+  
+  if (!sources || !Array.isArray(sources) || sources.length === 0) {
+    reply.code(400);
+    return { error: 'Sources array is required' };
+  }
+  
+  console.log(`[API] Custom scrape requested:`, { sources, keywords, location });
+  
+  try {
+    const result = await runScrapers({ sources, keywords, location });
+    return {
+      message: 'Custom scraping completed',
+      sources,
+      keywords,
+      location,
+      ...result
+    };
+  } catch (error) {
+    reply.code(500);
+    return { error: error.message };
+  }
 });
 
 // Debug/test endpoint
