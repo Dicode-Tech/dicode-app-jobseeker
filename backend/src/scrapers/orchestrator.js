@@ -6,6 +6,9 @@ const AdzunaScraper = require('./adzuna');
 const RemoteOKScraper = require('./remoteok');
 const ArbeitnowScraper = require('./arbeitnow');
 const WeWorkRemotelyScraper = require('./weworkremotely');
+const RemotiveScraper = require('./remotive');
+const HimalayasScraper = require('./himalayas');
+const WorkingNomadsScraper = require('./workingnomads');
 
 // Registry of available scrapers
 const SCRAPER_REGISTRY = {
@@ -13,7 +16,10 @@ const SCRAPER_REGISTRY = {
   remoteok: RemoteOKScraper,
   arbeitnow: ArbeitnowScraper,
   weworkremotely: WeWorkRemotelyScraper,
-  all: [AdzunaScraper, RemoteOKScraper, ArbeitnowScraper, WeWorkRemotelyScraper]
+  remotive: RemotiveScraper,
+  himalayas: HimalayasScraper,
+  workingnomads: WorkingNomadsScraper,
+  all: [AdzunaScraper, RemoteOKScraper, ArbeitnowScraper, WeWorkRemotelyScraper, RemotiveScraper, HimalayasScraper, WorkingNomadsScraper]
 };
 
 /**
@@ -95,6 +101,15 @@ async function runScrapers(options = {}) {
       } else if (sourceName === 'weworkremotely') {
         // WeWorkRemotely: RSS-based, filter by keywords
         jobs = await scraper.searchJobs(keywords);
+      } else if (sourceName === 'remotive') {
+        // Remotive: Public API with category filtering
+        jobs = await scraper.searchJobs(keywords, location, limit);
+      } else if (sourceName === 'himalayas') {
+        // Himalayas: JSON API with pagination
+        jobs = await scraper.searchJobs(keywords, location, limit);
+      } else if (sourceName === 'workingnomads') {
+        // Working Nomads: JSON API, all remote
+        jobs = await scraper.searchJobs(keywords, location, limit);
       } else {
         // Generic fallback
         jobs = await scraper.searchJobs(keywords, location);
@@ -167,6 +182,27 @@ function getScraperInfo(sourceName) {
       requiresAuth: false,
       locations: ['Remote/Global'],
       jobTypes: ['Remote only', 'Programming', 'Design', 'DevOps']
+    },
+    remotive: {
+      name: 'Remotive',
+      description: 'Remote jobs from vetted tech companies',
+      requiresAuth: false,
+      locations: ['Remote/Global', 'USA', 'Europe', 'Worldwide'],
+      jobTypes: ['Remote only', 'Software Development', 'Marketing', 'Design']
+    },
+    himalayas: {
+      name: 'Himalayas',
+      description: 'Tech-focused remote jobs with company profiles',
+      requiresAuth: false,
+      locations: ['Remote/Global', 'USA', 'Europe', 'APAC'],
+      jobTypes: ['Remote only', 'Tech', 'Engineering', 'Product']
+    },
+    workingnomads: {
+      name: 'Working Nomads',
+      description: 'Fully remote jobs for digital nomads',
+      requiresAuth: false,
+      locations: ['Remote/Global', 'Anywhere'],
+      jobTypes: ['Remote only', 'Development', 'Design', 'Marketing', 'Writing']
     }
   };
   
