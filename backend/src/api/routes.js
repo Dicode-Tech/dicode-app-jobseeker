@@ -2,6 +2,112 @@ const { getDb } = require('../db/database');
 const { calculateMatchScore } = require('../matcher/scorer');
 const { runScrapers, getAvailableSources, getScraperInfo } = require('../scrapers/orchestrator');
 
+// Helper to save jobs to database
+async function saveJobsToDatabase(jobs) {
+  const db = getDb();
+  let added = 0;
+  let updated = 0;
+  let processed = 0;
+  
+  try {
+    for (const job of jobs) {
+      processed++;
+      
+      // Calculate match score
+      const { score, reasons } = calculateMatchScore(job);
+      
+      // Validate job data
+      if (!job.external_id || !job.title || !job.url) {
+        console.log(`[SaveJobs] Skipping invalid job #${processed}: missing required fields`);
+        continue;
+      }
+      
+      // Insert or update job
+      try {
+        await new Promise((resolve, reject) => {
+          const stmt = db.prepare(`
+            INSERT INTO jobs (
+              external_id, source, title, company, location, description,
+              url, salary_min, salary_max, salary_currency, job_type, remote,
+              tags, posted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(external_id) DO UPDATE SET
+              updated_at = CURRENT_TIMESTAMP,
+              salary_min = COALESCE(excluded.salary_min, salary_min),
+              salary_max = COALESCE(excluded.salary_max, salary_max)
+          `);
+          
+          stmt.run([
+            job.external_id,
+            job.source,
+            job.title,
+            job.company,
+            job.location,
+            job.description,
+            job.url,
+            job.salary_min,
+            job.salary_max,
+            job.salary_currency,
+            job.job_type,
+            job.remote ? 1 : 0,
+            job.tags,
+            job.posted_at
+          ], function(err) {
+            if (err) {
+              console.error(`[SaveJobs] DB error for job ${job.external_id}:`, err.message);
+              reject(err);
+            } else {
+              if (this.changes > 0) {
+                if (this.lastID) added++;
+                else updated++;
+              }
+              resolve();
+            }
+            stmt.finalize();
+          });
+        });
+        
+        // Get job ID for match scoring
+        const jobId = await new Promise((resolve, reject) => {
+          db.get('SELECT id FROM jobs WHERE external_id = ?', [job.external_id], (err, row) => {
+            if (err) reject(err);
+            else resolve(row?.id);
+          });
+        });
+        
+        if (jobId) {
+          // Insert or update match score
+          await new Promise((resolve, reject) => {
+            db.run(`
+              INSERT INTO job_matches (job_id, match_score, match_reasons, status)
+              VALUES (?, ?, ?, 'new')
+              ON CONFLICT(job_id) DO UPDATE SET
+                match_score = excluded.match_score,
+                match_reasons = excluded.match_reasons,
+                updated_at = CURRENT_TIMESTAMP
+            `, [jobId, score, JSON.stringify(reasons)], (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+        }
+      } catch (insertError) {
+        console.error(`[SaveJobs] Failed to insert job ${job.external_id}:`, insertError.message);
+      }
+    }
+    
+    // Log scraper run
+    db.run(`
+      INSERT INTO scraper_logs (source, jobs_found, jobs_added, jobs_updated, started_at, finished_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, ['api_scrape', jobs.length, added, updated, Date.now() - 10000, Date.now()]);
+    
+    return { added, updated, processed };
+  } finally {
+    db.close();
+  }
+}
+
 async function routes(fastify, options) {
   
   // Get all jobs with optional filtering
@@ -298,12 +404,17 @@ async function routes(fastify, options) {
         bySource[job.source] = (bySource[job.source] || 0) + 1;
       });
       
+      // Save jobs to database
+      console.log(`[API /scrape] Saving ${jobs.length} jobs to database...`);
+      const saveResult = await saveJobsToDatabase(jobs);
+      
       return {
         success: true,
         jobs_found: jobs.length,
+        added: saveResult.added,
+        updated: saveResult.updated,
         duration_ms: duration,
-        by_source: bySource,
-        jobs: jobs
+        by_source: bySource
       };
     } catch (error) {
       console.error('[API /scrape] Error:', error.message);
@@ -340,12 +451,17 @@ async function routes(fastify, options) {
         bySource[job.source] = (bySource[job.source] || 0) + 1;
       });
       
+      // Save jobs to database
+      console.log(`[API /scrape/custom] Saving ${jobs.length} jobs to database...`);
+      const saveResult = await saveJobsToDatabase(jobs);
+      
       return {
         success: true,
         jobs_found: jobs.length,
+        added: saveResult.added,
+        updated: saveResult.updated,
         duration_ms: duration,
-        by_source: bySource,
-        jobs: jobs
+        by_source: bySource
       };
     } catch (error) {
       console.error('[API /scrape/custom] Error:', error.message);
