@@ -31,10 +31,16 @@ function App() {
     try {
       const res = await fetch('/api/scrape', { method: 'POST' });
       const data = await res.json();
-      alert(data.message);
+      if (data.success) {
+        alert(`✅ Scraping completed!\nFound: ${data.jobs_found} jobs\nAdded: ${data.added}\nUpdated: ${data.updated}`);
+      } else if (data.error) {
+        alert('❌ Error: ' + data.error);
+      } else {
+        alert('⚠️ Unexpected response from server');
+      }
       fetchStats();
     } catch (err) {
-      alert('Scraping failed: ' + err.message);
+      alert('❌ Scraping failed: ' + err.message);
     }
   };
 
