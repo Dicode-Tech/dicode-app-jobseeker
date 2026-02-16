@@ -470,6 +470,53 @@ async function routes(fastify, options) {
     }
   });
   
+  // Receive jobs from LinkedIn Chrome Extension
+  fastify.post('/api/jobs/linkedin', async (request, reply) => {
+    const { jobs } = request.body || {};
+    
+    if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
+      reply.code(400);
+      return { error: 'Missing required field: jobs (array of job objects)' };
+    }
+    
+    try {
+      console.log(`[API /jobs/linkedin] Received ${jobs.length} jobs from LinkedIn extension`);
+      
+      // Normalize LinkedIn jobs to match our schema
+      const normalizedJobs = jobs.map(job => ({
+        external_id: `linkedin_${job.jobId || Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        source: 'linkedin',
+        title: job.title || 'Unknown Position',
+        company: job.company || 'Unknown Company',
+        location: job.location || 'Remote/Unknown',
+        description: job.description || '',
+        url: job.jobUrl || job.url || '',
+        salary_min: null,
+        salary_max: null,
+        salary_currency: null,
+        job_type: 'full-time',
+        remote: job.location?.toLowerCase().includes('remote') || false,
+        tags: '',
+        posted_at: new Date()
+      }));
+      
+      // Save to database
+      const saveResult = await saveJobsToDatabase(normalizedJobs);
+      
+      return {
+        success: true,
+        received: jobs.length,
+        added: saveResult.added,
+        updated: saveResult.updated,
+        message: `Successfully processed ${jobs.length} LinkedIn jobs`
+      };
+    } catch (error) {
+      console.error('[API /jobs/linkedin] Error:', error.message);
+      reply.code(500);
+      return { error: error.message };
+    }
+  });
+  
 }
 
 module.exports = routes;
